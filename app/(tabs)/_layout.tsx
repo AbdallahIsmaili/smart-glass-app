@@ -6,21 +6,32 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#007AFF',
-        headerStyle: {
-          backgroundColor: '#007AFF',
+        tabBarActiveTintColor: '#00ff88',
+        tabBarInactiveTintColor: '#888888',
+        tabBarStyle: {
+          backgroundColor: '#0a0a0a',
+          borderTopWidth: 1,
+          borderTopColor: '#1a1a1a',
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
         },
-        headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
         },
+        headerShown: false,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
@@ -28,8 +39,12 @@ export default function TabLayout() {
         name="bluetooth"
         options={{
           title: 'Bluetooth',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bluetooth" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "bluetooth" : "bluetooth-outline"}
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
@@ -37,8 +52,12 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "settings" : "settings-outline"}
+              size={size}
+              color={color}
+            />
           ),
         }}
       />

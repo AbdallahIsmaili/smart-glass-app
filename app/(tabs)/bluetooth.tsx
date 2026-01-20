@@ -1,7 +1,5 @@
-// app/(tabs)/bluetooth.tsx
 import React, { useState, useEffect } from 'react';
 import {
-  StyleSheet,
   View,
   Text,
   TouchableOpacity,
@@ -10,6 +8,7 @@ import {
   Alert,
   Platform,
   PermissionsAndroid,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -25,10 +24,25 @@ export default function BluetoothScreen() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
   const [hasPermissions, setHasPermissions] = useState(false);
+  const scanAnim = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     requestPermissions();
   }, []);
+
+  useEffect(() => {
+    if (scanning) {
+      Animated.loop(
+        Animated.timing(scanAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      scanAnim.setValue(0);
+    }
+  }, [scanning]);
 
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
@@ -92,267 +106,167 @@ export default function BluetoothScreen() {
     setConnectedDevice(null);
   };
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Ionicons name="bluetooth" size={48} color="#007AFF" />
-        <Text style={styles.title}>Bluetooth Devices</Text>
-        <Text style={styles.subtitle}>
-          {connected ? `Connected to ${connectedDevice?.name}` : 'Not connected'}
-        </Text>
-      </View>
+  const spin = scanAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
-      {!hasPermissions && (
-        <View style={styles.warningBox}>
-          <Ionicons name="warning" size={24} color="#ff9500" />
-          <Text style={styles.warningText}>
-            Bluetooth permissions required. Please enable in settings.
+  return (
+    <View className="flex-1 bg-primary-black">
+      {/* Header */}
+      <View className="bg-secondary-black pt-12 pb-6 px-6 border-b border-card-black">
+        <View className="items-center mb-4">
+          <View className="bg-light-green/20 rounded-full p-4 mb-3">
+            <Ionicons name="bluetooth" size={40} color="#00ff88" />
+          </View>
+          <Text className="text-2xl font-bold text-white">Bluetooth Devices</Text>
+          <Text className="text-text-gray text-sm mt-1">
+            {connected ? `Connected to ${connectedDevice?.name}` : 'Not connected'}
           </Text>
         </View>
-      )}
+      </View>
 
-      {connected ? (
-        <View style={styles.connectedSection}>
-          <View style={styles.connectedCard}>
-            <Ionicons name="checkmark-circle" size={64} color="#00ff00" />
-            <Text style={styles.connectedName}>{connectedDevice?.name}</Text>
-            <Text style={styles.connectedId}>{connectedDevice?.id}</Text>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonDanger]}
-              onPress={disconnect}
-            >
-              <Text style={styles.buttonText}>Disconnect</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        <>
-          <TouchableOpacity
-            style={[styles.button, styles.buttonPrimary]}
-            onPress={scanForDevices}
-            disabled={scanning || !hasPermissions}
-          >
-            {scanning ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="search" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Scan for Devices</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {scanning && (
-            <View style={styles.scanningIndicator}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.scanningText}>Scanning for devices...</Text>
+      <ScrollView className="flex-1 px-6">
+        {/* Permission Warning */}
+        {!hasPermissions && (
+          <View className="mt-6 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4">
+            <View className="flex-row items-start gap-3">
+              <Ionicons name="warning" size={24} color="#fbbf24" />
+              <View className="flex-1">
+                <Text className="text-yellow-400 font-semibold mb-1">
+                  Permissions Required
+                </Text>
+                <Text className="text-yellow-300/80 text-sm">
+                  Bluetooth permissions are required. Please enable them in settings.
+                </Text>
+              </View>
             </View>
-          )}
+          </View>
+        )}
 
-          <ScrollView style={styles.deviceList}>
-            {devices.length === 0 && !scanning && (
-              <View style={styles.emptyState}>
-                <Ionicons name="bluetooth-outline" size={64} color="#444" />
-                <Text style={styles.emptyText}>No devices found</Text>
-                <Text style={styles.emptySubtext}>Tap "Scan for Devices" to start</Text>
+        {/* Connected Device Card */}
+        {connected ? (
+          <View className="mt-6">
+            <View className="bg-card-black border-2 border-light-green rounded-3xl p-6">
+              <View className="items-center">
+                <View className="bg-light-green/20 rounded-full p-6 mb-4">
+                  <Ionicons name="checkmark-circle" size={48} color="#00ff88" />
+                </View>
+                <Text className="text-white text-2xl font-bold mb-1">
+                  {connectedDevice?.name}
+                </Text>
+                <Text className="text-text-gray text-sm mb-6 font-mono">
+                  {connectedDevice?.id}
+                </Text>
+                <TouchableOpacity
+                  className="bg-red-500 rounded-xl px-8 py-4 w-full"
+                  onPress={disconnect}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-white text-center font-bold text-base">
+                    Disconnect
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <>
+            {/* Scan Button */}
+            <TouchableOpacity
+              className={`mt-6 rounded-2xl p-5 ${
+                scanning || !hasPermissions
+                  ? 'bg-card-black border border-gray-800'
+                  : 'bg-light-green'
+              }`}
+              onPress={scanForDevices}
+              disabled={scanning || !hasPermissions}
+              activeOpacity={0.7}
+            >
+              <View className="flex-row items-center justify-center gap-3">
+                {scanning ? (
+                  <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                    <Ionicons name="sync" size={24} color="#00ff88" />
+                  </Animated.View>
+                ) : (
+                  <Ionicons name="search" size={24} color={!hasPermissions ? "#888888" : "#000000"} />
+                )}
+                <Text className={`text-base font-bold ${
+                  scanning || !hasPermissions ? 'text-text-gray' : 'text-black'
+                }`}>
+                  {scanning ? 'Scanning...' : 'Scan for Devices'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Scanning Indicator */}
+            {scanning && (
+              <View className="mt-6 items-center">
+                <ActivityIndicator size="large" color="#00ff88" />
+                <Text className="text-text-gray mt-3">Searching for devices...</Text>
               </View>
             )}
 
-            {devices.map(device => (
-              <TouchableOpacity
-                key={device.id}
-                style={styles.deviceItem}
-                onPress={() => connectToDevice(device)}
-              >
-                <View style={styles.deviceIcon}>
-                  <Ionicons name="bluetooth" size={32} color="#007AFF" />
+            {/* Device List */}
+            <View className="mt-6">
+              {devices.length === 0 && !scanning && (
+                <View className="bg-card-black rounded-3xl p-12 items-center border border-gray-800">
+                  <View className="bg-secondary-black rounded-full p-6 mb-4">
+                    <Ionicons name="bluetooth-outline" size={48} color="#888888" />
+                  </View>
+                  <Text className="text-white text-lg font-semibold mb-2">
+                    No devices found
+                  </Text>
+                  <Text className="text-text-gray text-center text-sm">
+                    Tap "Scan for Devices" to start searching
+                  </Text>
                 </View>
-                <View style={styles.deviceInfo}>
-                  <Text style={styles.deviceName}>{device.name}</Text>
-                  <Text style={styles.deviceId}>{device.id}</Text>
-                  {device.rssi && (
-                    <Text style={styles.deviceRssi}>Signal: {device.rssi} dBm</Text>
-                  )}
-                </View>
-                <Ionicons name="chevron-forward" size={24} color="#888" />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </>
-      )}
+              )}
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          💡 Looking for "SmartGlass_Audio"
-        </Text>
-        <Text style={styles.footerSubtext}>
-          Note: Requires native build (npx expo prebuild)
-        </Text>
-      </View>
+              {devices.map(device => (
+                <TouchableOpacity
+                  key={device.id}
+                  className="bg-card-black rounded-2xl p-4 mb-3 border border-gray-800"
+                  onPress={() => connectToDevice(device)}
+                  activeOpacity={0.7}
+                >
+                  <View className="flex-row items-center gap-4">
+                    <View className="bg-secondary-black rounded-full p-3">
+                      <Ionicons name="bluetooth" size={28} color="#00ff88" />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-white font-semibold text-base mb-1">
+                        {device.name}
+                      </Text>
+                      <Text className="text-text-gray text-xs font-mono">
+                        {device.id}
+                      </Text>
+                      {device.rssi && (
+                        <Text className="text-text-gray text-xs mt-1">
+                          Signal: {device.rssi} dBm
+                        </Text>
+                      )}
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#888888" />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Info Footer */}
+        <View className="mt-6 mb-6 bg-secondary-black border border-gray-800 rounded-2xl p-4">
+          <View className="items-center">
+            <Text className="text-text-light-gray text-sm text-center mb-2">
+              💡 Looking for "SmartGlass_Audio"
+            </Text>
+            <Text className="text-text-gray text-xs text-center">
+              Note: Requires native build (npx expo prebuild)
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-    padding: 20,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginTop: 10,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#888',
-    marginTop: 5,
-  },
-  warningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 20,
-    gap: 10,
-  },
-  warningText: {
-    color: '#ff9500',
-    fontSize: 14,
-    flex: 1,
-  },
-  connectedSection: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  connectedCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    padding: 40,
-    alignItems: 'center',
-    width: '100%',
-    borderWidth: 2,
-    borderColor: '#00ff00',
-  },
-  connectedName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginTop: 20,
-  },
-  connectedId: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 5,
-    marginBottom: 30,
-  },
-  button: {
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 50,
-    flexDirection: 'row',
-    gap: 10,
-    width: '100%',
-  },
-  buttonPrimary: {
-    backgroundColor: '#007AFF',
-  },
-  buttonDanger: {
-    backgroundColor: '#ff4444',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  scanningIndicator: {
-    alignItems: 'center',
-    marginVertical: 30,
-  },
-  scanningText: {
-    color: '#888',
-    marginTop: 10,
-    fontSize: 14,
-  },
-  deviceList: {
-    flex: 1,
-    marginTop: 20,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 20,
-  },
-  emptySubtext: {
-    color: '#888',
-    fontSize: 14,
-    marginTop: 5,
-  },
-  deviceItem: {
-    backgroundColor: '#1a1a1a',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 15,
-  },
-  deviceIcon: {
-    width: 50,
-    height: 50,
-    backgroundColor: '#0a0a0a',
-    borderRadius: 25,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deviceInfo: {
-    flex: 1,
-  },
-  deviceName: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  deviceId: {
-    color: '#888',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  deviceRssi: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  footer: {
-    marginTop: 20,
-    padding: 15,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  footerText: {
-    color: '#888',
-    fontSize: 12,
-  },
-  footerSubtext: {
-    color: '#666',
-    fontSize: 10,
-    marginTop: 5,
-  },
-});
