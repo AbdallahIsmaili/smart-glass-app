@@ -11,6 +11,7 @@ import {
   View,
   Alert,
   Animated,
+  AppState,
 } from "react-native";
 import { io, Socket } from "socket.io-client";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,18 +34,32 @@ export default function HomeScreen() {
 
   const socketRef = useRef<Socket | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     const setup = async () => {
+      await setupAudio();
       await requestPermissions();
       connectToWebSocket();
     };
     setup();
 
+    // Handle app state changes
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        addLog('📱 App returned to foreground');
+      }
+      appState.current = nextAppState;
+    });
+
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
+      subscription.remove();
     };
   }, []);
 
@@ -66,6 +81,21 @@ export default function HomeScreen() {
       ).start();
     }
   }, [wsConnected, btConnected]);
+
+  const setupAudio = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      addLog('🔊 Audio mode configured');
+    } catch (error) {
+      addLog(`⚠️ Audio setup warning: ${error}`);
+    }
+  };
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -166,6 +196,12 @@ export default function HomeScreen() {
 
   const playAudioLocally = async (audioBuffer: Buffer) => {
     try {
+      // Check if app is in foreground
+      if (appState.current !== 'active') {
+        addLog("⚠️ Skipping playback - app in background");
+        return;
+      }
+
       const fileUri = `${FileSystem.cacheDirectory}temp_audio.wav`;
 
       await FileSystem.writeAsStringAsync(
@@ -178,31 +214,69 @@ export default function HomeScreen() {
         await soundRef.current.unloadAsync();
       }
 
-      const { sound } = await Audio.Sound.createAsync({ uri: fileUri });
-      soundRef.current = sound;
-      await sound.playAsync();
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: fileUri },
+        { shouldPlay: true }
+      );
 
-      addLog("📊 Playing audio locally");
-    } catch (error) {
-      addLog(`❌ Local playback error: ${error}`);
+      soundRef.current = sound;
+
+      // Set up completion callback
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+
+      addLog("🔊 Playing audio locally");
+    } catch (error: any) {
+      // Handle specific error cases
+      if (error.message?.includes('background')) {
+        addLog("⚠️ Cannot play - app in background");
+      } else if (error.message?.includes('focus')) {
+        addLog("⚠️ Cannot play - audio focus not acquired");
+      } else {
+        addLog(`❌ Local playback error: ${error}`);
+      }
     }
   };
 
   return (
-    <View className="flex-1 bg-primary-black">
+    <View style={{ flex: 1, backgroundColor: '#000000' }}>
       {/* Header with Status */}
-      <View className="bg-secondary-black pt-12 pb-6 px-6 border-b border-card-black">
-        <Text className="text-3xl font-bold text-white mb-4">Smart Glass</Text>
+      <View style={{
+        backgroundColor: '#0a0a0a',
+        paddingTop: 48,
+        paddingBottom: 24,
+        paddingHorizontal: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: '#1a1a1a'
+      }}>
+        <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#ffffff', marginBottom: 16 }}>
+          Smart Glass
+        </Text>
 
         {/* Connection Status Cards */}
-        <View className="flex-row gap-3">
-          <View className="flex-1 bg-card-black rounded-2xl p-4 border border-gray-800">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2">
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={{
+            flex: 1,
+            backgroundColor: '#1a1a1a',
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: '#2a2a2a'
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Animated.View style={{ transform: [{ scale: wsConnected ? pulseAnim : 1 }] }}>
-                  <View className={`w-3 h-3 rounded-full ${wsConnected ? 'bg-light-green' : 'bg-text-gray'}`} />
+                  <View style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    backgroundColor: wsConnected ? '#00ff88' : '#888888'
+                  }} />
                 </Animated.View>
-                <Text className="text-text-light-gray text-sm font-medium">Server</Text>
+                <Text style={{ color: '#cccccc', fontSize: 14, fontWeight: '500' }}>Server</Text>
               </View>
               <Ionicons
                 name={wsConnected ? "checkmark-circle" : "close-circle"}
@@ -212,13 +286,25 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View className="flex-1 bg-card-black rounded-2xl p-4 border border-gray-800">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2">
+          <View style={{
+            flex: 1,
+            backgroundColor: '#1a1a1a',
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: '#2a2a2a'
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Animated.View style={{ transform: [{ scale: btConnected ? pulseAnim : 1 }] }}>
-                  <View className={`w-3 h-3 rounded-full ${btConnected ? 'bg-light-green' : 'bg-text-gray'}`} />
+                  <View style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    backgroundColor: btConnected ? '#00ff88' : '#888888'
+                  }} />
                 </Animated.View>
-                <Text className="text-text-light-gray text-sm font-medium">Bluetooth</Text>
+                <Text style={{ color: '#cccccc', fontSize: 14, fontWeight: '500' }}>Bluetooth</Text>
               </View>
               <Ionicons
                 name={btConnected ? "checkmark-circle" : "close-circle"}
@@ -230,65 +316,114 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <ScrollView className="flex-1 px-6">
+      <ScrollView style={{ flex: 1, paddingHorizontal: 24 }}>
         {/* Description Card */}
         {lastDescription ? (
-          <View className="mt-6 bg-gradient-to-br from-light-green/20 to-dark-green/10 rounded-3xl p-6 border border-light-green/30">
-            <View className="flex-row items-start gap-3">
-              <View className="bg-light-green/20 rounded-full p-3">
+          <View style={{
+            marginTop: 24,
+            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+            borderRadius: 24,
+            padding: 24,
+            borderWidth: 1,
+            borderColor: 'rgba(0, 255, 136, 0.3)'
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+              <View style={{
+                backgroundColor: 'rgba(0, 255, 136, 0.2)',
+                borderRadius: 20,
+                padding: 12
+              }}>
                 <Ionicons name="eye" size={24} color="#00ff88" />
               </View>
-              <View className="flex-1">
-                <Text className="text-xs font-semibold text-light-green mb-1 uppercase tracking-wider">
-                  Latest Detection
+              <View style={{ flex: 1 }}>
+                <Text style={{
+                  fontSize: 10,
+                  fontWeight: '600',
+                  color: '#00ff88',
+                  marginBottom: 4,
+                  letterSpacing: 1.5
+                }}>
+                  LATEST DETECTION
                 </Text>
-                <Text className="text-white text-lg font-medium leading-6">
+                <Text style={{
+                  color: '#ffffff',
+                  fontSize: 18,
+                  fontWeight: '500',
+                  lineHeight: 24
+                }}>
                   {lastDescription}
                 </Text>
               </View>
             </View>
           </View>
         ) : (
-          <View className="mt-6 bg-card-black rounded-3xl p-8 border border-gray-800">
-            <View className="items-center">
-              <View className="bg-secondary-black rounded-full p-4 mb-4">
-                <Ionicons name="eye-off-outline" size={32} color="#888888" />
-              </View>
-              <Text className="text-text-gray text-center">
-                Waiting for visual data...
-              </Text>
+          <View style={{
+            marginTop: 24,
+            backgroundColor: '#1a1a1a',
+            borderRadius: 24,
+            padding: 32,
+            borderWidth: 1,
+            borderColor: '#2a2a2a',
+            alignItems: 'center'
+          }}>
+            <View style={{
+              backgroundColor: '#0a0a0a',
+              borderRadius: 20,
+              padding: 16,
+              marginBottom: 16
+            }}>
+              <Ionicons name="eye-off-outline" size={32} color="#888888" />
             </View>
+            <Text style={{ color: '#888888', textAlign: 'center' }}>
+              Waiting for visual data...
+            </Text>
           </View>
         )}
 
         {/* Action Buttons */}
-        <View className="mt-6 gap-3">
+        <View style={{ marginTop: 24, gap: 12 }}>
           <TouchableOpacity
-            className={`rounded-2xl p-5 ${wsConnected ? 'bg-card-black border border-gray-800' : 'bg-light-green'}`}
+            style={{
+              borderRadius: 16,
+              padding: 20,
+              backgroundColor: wsConnected ? '#1a1a1a' : '#00ff88',
+              borderWidth: wsConnected ? 1 : 0,
+              borderColor: '#2a2a2a'
+            }}
             onPress={connectToWebSocket}
             disabled={wsConnected}
             activeOpacity={0.7}
           >
-            <View className="flex-row items-center justify-center gap-3">
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
               <Ionicons
                 name={wsConnected ? "checkmark-circle" : "server"}
                 size={24}
                 color={wsConnected ? "#00ff88" : "#000000"}
               />
-              <Text className={`text-base font-bold ${wsConnected ? 'text-light-green' : 'text-black'}`}>
+              <Text style={{
+                fontSize: 16,
+                fontWeight: 'bold',
+                color: wsConnected ? '#00ff88' : '#000000'
+              }}>
                 {wsConnected ? "Connected to Server" : "Connect to Server"}
               </Text>
             </View>
           </TouchableOpacity>
 
           <TouchableOpacity
-            className="bg-card-black border border-gray-800 rounded-2xl p-5"
+            style={{
+              backgroundColor: '#1a1a1a',
+              borderWidth: 1,
+              borderColor: '#2a2a2a',
+              borderRadius: 16,
+              padding: 20
+            }}
             onPress={scanForDevices}
             activeOpacity={0.7}
           >
-            <View className="flex-row items-center justify-center gap-3">
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
               <Ionicons name="bluetooth" size={24} color="#00ff88" />
-              <Text className="text-base font-bold text-white">
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#ffffff' }}>
                 Scan for Device
               </Text>
             </View>
@@ -296,10 +431,17 @@ export default function HomeScreen() {
         </View>
 
         {btConnected && (
-          <View className="mt-4 bg-light-green/10 border border-light-green/30 rounded-2xl p-4">
-            <View className="flex-row items-center gap-2">
+          <View style={{
+            marginTop: 16,
+            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+            borderWidth: 1,
+            borderColor: 'rgba(0, 255, 136, 0.3)',
+            borderRadius: 16,
+            padding: 16
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name="checkmark-circle" size={20} color="#00ff88" />
-              <Text className="text-light-green font-medium">
+              <Text style={{ color: '#00ff88', fontWeight: '500' }}>
                 Connected to: {btDevice}
               </Text>
             </View>
@@ -307,38 +449,75 @@ export default function HomeScreen() {
         )}
 
         {/* Info Banner */}
-        <View className="mt-4 bg-secondary-black border border-gray-800 rounded-2xl p-4">
-          <View className="flex-row items-start gap-3">
+        <View style={{
+          marginTop: 16,
+          backgroundColor: '#0a0a0a',
+          borderWidth: 1,
+          borderColor: '#2a2a2a',
+          borderRadius: 16,
+          padding: 16
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
             <Ionicons name="information-circle" size={20} color="#888888" />
-            <Text className="flex-1 text-text-gray text-sm">
+            <Text style={{ flex: 1, color: '#888888', fontSize: 14 }}>
               Full Bluetooth support requires native build. Run npx expo prebuild for complete functionality.
             </Text>
           </View>
         </View>
 
         {/* Activity Log */}
-        <View className="mt-6 mb-6">
-          <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-white text-lg font-bold">Activity Log</Text>
-            <View className="bg-card-black rounded-full px-3 py-1">
-              <Text className="text-text-gray text-xs font-medium">{logs.length} events</Text>
+        <View style={{ marginTop: 24, marginBottom: 24 }}>
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 12
+          }}>
+            <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: 'bold' }}>
+              Activity Log
+            </Text>
+            <View style={{
+              backgroundColor: '#1a1a1a',
+              borderRadius: 20,
+              paddingHorizontal: 12,
+              paddingVertical: 4
+            }}>
+              <Text style={{ color: '#888888', fontSize: 12, fontWeight: '500' }}>
+                {logs.length} events
+              </Text>
             </View>
           </View>
 
-          <View className="bg-secondary-black rounded-2xl border border-gray-800 overflow-hidden">
-            <ScrollView className="max-h-64 p-4">
+          <View style={{
+            backgroundColor: '#0a0a0a',
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: '#2a2a2a',
+            overflow: 'hidden'
+          }}>
+            <ScrollView style={{ maxHeight: 256, padding: 16 }}>
               {logs.length === 0 ? (
-                <View className="py-8 items-center">
+                <View style={{ paddingVertical: 32, alignItems: 'center' }}>
                   <Ionicons name="time-outline" size={32} color="#888888" />
-                  <Text className="text-text-gray mt-2">No activity yet</Text>
+                  <Text style={{ color: '#888888', marginTop: 8 }}>No activity yet</Text>
                 </View>
               ) : (
                 logs.map((log, index) => (
                   <View
                     key={index}
-                    className={`mb-2 ${index !== logs.length - 1 ? 'border-b border-card-black pb-2' : ''}`}
+                    style={{
+                      marginBottom: 8,
+                      borderBottomWidth: index !== logs.length - 1 ? 1 : 0,
+                      borderBottomColor: '#1a1a1a',
+                      paddingBottom: index !== logs.length - 1 ? 8 : 0
+                    }}
                   >
-                    <Text className="text-text-light-gray text-xs font-mono leading-5">
+                    <Text style={{
+                      color: '#cccccc',
+                      fontSize: 12,
+                      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+                      lineHeight: 20
+                    }}>
                       {log}
                     </Text>
                   </View>
